@@ -21,6 +21,10 @@ Options (env vars, set before running):
 $ErrorActionPreference = 'Stop'
 $tag = if ($env:AP_TAG) { $env:AP_TAG } else { 'corp' }
 
+# Auto-log everything to a temp file so the error survives even if a sub-script `exit`s the host.
+$LogFile = Join-Path $env:TEMP 'setkernel-autopilot.log'
+try { Start-Transcript -Path $LogFile -Force -ErrorAction Stop | Out-Null } catch {}
+
 function Show-Banner {
     $logo = @'
 
@@ -39,6 +43,8 @@ function Show-Banner {
 # Under `irm | iex`, `exit` would close the whole host and the message would vanish — pause + return instead.
 function Stop-Here($msg, $color = 'Red') {
     if ($msg) { Write-Host "`n$msg" -ForegroundColor $color }
+    Write-Host "`nFull log saved to: $LogFile   (open with: notepad `"$LogFile`")" -ForegroundColor DarkGray
+    try { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null } catch {}
     [void](Read-Host "`nPress Enter to close")
 }
 
@@ -96,14 +102,23 @@ try {
     if (-not $apScript -or -not (Test-Path $apScript)) { Stop-Here "Couldn't locate Get-WindowsAutopilotInfo.ps1 after install. Re-run, or check PSGallery access."; return }
 
     Write-Host "`nUploading hardware hash + WAITING for profile assignment (can take ~10-15 min)..." -ForegroundColor Yellow
-    Write-Host "Sign in at the prompt as an Intune Admin (Graph only — NOT a Windows sign-in)." -ForegroundColor Yellow
-    & $apScript -Online -GroupTag $tag -Assign
+    Write-Host "At the sign-in: use an Intune Admin and pick 'No, sign in to this app only' (NOT a Windows sign-in)." -ForegroundColor Yellow
+
+    # Run the community uploader in a CHILD PowerShell so its internal `exit` can't close THIS window.
+    # The child appends its own transcript to the same log; release ours first to avoid a write lock.
+    try { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null } catch {}
+    $inner = "try { Start-Transcript -Path '$LogFile' -Append -Force | Out-Null } catch {}; try { & '$apScript' -Online -GroupTag '$tag' -Assign; `$ec=`$LASTEXITCODE } catch { Write-Host ('ERROR: ' + `$_.Exception.Message) -ForegroundColor Red; `$ec=99 }; try { Stop-Transcript | Out-Null } catch {}; if (`$null -eq `$ec) { `$ec = 0 }; exit `$ec"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $inner
+    $code = $LASTEXITCODE
+    try { Start-Transcript -Path $LogFile -Append -Force -ErrorAction Stop | Out-Null } catch {}
+    if ($code -ne 0) { Stop-Here "Autopilot registration FAILED (uploader exit code $code). Open the log for the real error."; return }
 
     Write-Host "`nSUCCESS — registered to Autopilot (tag '$tag') and profile ASSIGNED." -ForegroundColor Green
     if ($env:AP_NOSHUTDOWN) {
         Stop-Here "AP_NOSHUTDOWN set — not powering off. Power off before shipping (don't sign into Windows); or for your OWN device, reboot into the Autopilot OOBE and sign in as yourself." 'Yellow'
     } else {
-        Write-Host "Powering off in 20s so you can ship it. DO NOT sign into Windows." -ForegroundColor Green
+        Write-Host "Powering off in 20s so you can ship it. DO NOT sign into Windows.  (Log: $LogFile)" -ForegroundColor Green
+        try { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null } catch {}
         Start-Sleep -Seconds 20
         shutdown /s /t 0
     }
