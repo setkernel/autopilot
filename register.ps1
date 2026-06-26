@@ -1,29 +1,22 @@
 <#
-register.ps1 — one-shot Windows Autopilot registration · SetKernel Digital Inc.
-Run at OOBE (Shift+F10) on a device you're provisioning: it registers the device CORPORATE to your
-Intune/Autopilot tenant, waits for the deployment profile to be assigned, then powers the device off
-so it's ready to ship. The end user then powers on and completes the Autopilot OOBE.
+register.ps1 — one-shot Windows Autopilot registration, run at OOBE (Shift+F10). SetKernel Digital Inc.
+
+Registers the device CORPORATE to your Intune/Autopilot tenant, waits for the deployment profile to be
+assigned, then powers off ready to ship. The end user then powers on and completes the Autopilot OOBE.
 
   Set-ExecutionPolicy Bypass -Scope Process -Force; irm https://setkernel.net/ap | iex
 
-What it does:
-  1. Verifies the Windows edition (Autopilot needs Pro/Enterprise; Home is rejected).
-  2. Installs the community Get-WindowsAutopilotInfo script (handles OOBE PSGallery prereqs).
-  3. Get-WindowsAutopilotInfo -Online -GroupTag <tag> -Assign
-       -Online   uploads the hardware hash to Intune (sign in ONCE at the Graph prompt as an
-                 Intune Admin — this is API auth only; it does NOT put that account on the device).
-       -GroupTag puts the device in the matching dynamic group -> which delivers the Autopilot profile.
-       -Assign   WAITS until the Autopilot profile is actually assigned.
-  4. On success -> powers OFF. Ship it. The user's OOBE then enrolls it Corporate with your profile.
+Flow: edition check (Pro/Enterprise required) -> install Get-WindowsAutopilotInfo ->
+      Get-WindowsAutopilotInfo -Online -GroupTag <tag> -Assign  (upload hash, wait for profile) -> power off.
+Sign in ONCE at the Graph prompt as an Intune Admin (API auth only — it does NOT put that account on the
+device). Don't sign into Windows during build, and never add a work account from Settings (= Personal).
 
-Generic + tenant-agnostic — works for any org (the tenant is whoever signs in at the Graph prompt).
-Config via env vars (set before running):
+Generic + tenant-agnostic (tenant = whoever signs in) and secret-free — safe to host publicly.
+Options (env vars, set before running):
   $env:AP_TAG        group tag / OrderID   (default 'corp')
-  $env:AP_PROKEY     a PURCHASED Windows Pro key, to upgrade a Home device (changepk + reboot)
-  $env:AP_NOSHUTDOWN '1' to skip the power-off (reboot straight into the Autopilot OOBE instead)
-
-DO NOT sign into Windows yourself during build, and never add a work account from Settings (= Personal).
-No secrets in this script — safe to host publicly.   https://github.com/setkernel/autopilot
+  $env:AP_PROKEY     a PURCHASED Windows Pro key to upgrade a Home device (changepk + reboot, then re-run)
+  $env:AP_NOSHUTDOWN '1' to skip the power-off (reboot straight into the Autopilot OOBE — e.g. your own device)
+                                                                  https://github.com/setkernel/autopilot
 #>
 $ErrorActionPreference = 'Stop'
 $tag = if ($env:AP_TAG) { $env:AP_TAG } else { 'corp' }
@@ -43,44 +36,72 @@ function Show-Banner {
     Write-Host "  -------------------------------------------------" -ForegroundColor DarkCyan
 }
 
+# Under `irm | iex`, `exit` would close the whole host and the message would vanish — pause + return instead.
+function Stop-Here($msg, $color = 'Red') {
+    if ($msg) { Write-Host "`n$msg" -ForegroundColor $color }
+    [void](Read-Host "`nPress Enter to close")
+}
+
 Show-Banner
 Write-Host "  Registering this device to Autopilot  (group tag: $tag)`n" -ForegroundColor Cyan
+
+# group tag sanity (OrderID is ASCII, no spaces)
+if ($tag -match '\s' -or $tag -notmatch '^[\x21-\x7E]{1,250}$') {
+    Stop-Here "Invalid group tag '$tag' — must be ASCII with no spaces. Fix `$env:AP_TAG and re-run."
+    return
+}
+
 try {
     Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction SilentlyContinue
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-    # --- EDITION GATE: Autopilot/Entra-join need Pro/Enterprise. Windows HOME is NOT supported. ---
-    $edition = (Get-CimInstance Win32_OperatingSystem).Caption
-    if ($edition -match 'Home') {
-        Write-Host "`nThis device is '$edition'. Windows HOME cannot Entra-join or run Autopilot." -ForegroundColor Red
+    # --- EDITION GATE (SKU-based, not localized Caption): Autopilot needs Pro/Enterprise; Home is unsupported ---
+    $os = Get-CimInstance Win32_OperatingSystem
+    $homeSkus = 98, 99, 100, 101    # CoreN, CoreSingleLanguage, CoreCountrySpecific, Core (all "Home")
+    $isHome = ($homeSkus -contains [int]$os.OperatingSystemSKU) -or ($os.Caption -match 'Home')
+    if ($isHome) {
+        Write-Host "This device is '$($os.Caption)' (Home). Windows HOME cannot Entra-join or run Autopilot." -ForegroundColor Red
         if ($env:AP_PROKEY) {
-            Write-Host "Upgrading edition to Pro with the supplied AP_PROKEY, then rebooting. RE-RUN this one-liner after reboot." -ForegroundColor Yellow
+            Write-Host "Upgrading to Pro with AP_PROKEY (changepk) — it will reboot; RE-RUN this one-liner after reboot." -ForegroundColor Yellow
             changepk.exe /productkey $env:AP_PROKEY
-            Write-Host "If it doesn't reboot on its own, reboot manually and re-run." -ForegroundColor Yellow
-            exit 0
+            if ($LASTEXITCODE -ne 0) {
+                Stop-Here "changepk failed (exit $LASTEXITCODE) — key invalid or the edition upgrade was blocked. Use a real, purchased Pro key, or apply it in Settings > Activation."
+                return
+            }
+            Stop-Here "If it didn't reboot automatically, reboot manually, then re-run the one-liner." 'Yellow'
+            return
         }
-        Write-Host "Microsoft 365 Business Premium does NOT include Home->Pro upgrade rights — you need a PURCHASED Windows 11 Pro license/key." -ForegroundColor Red
-        Write-Host "Fix: set `$env:AP_PROKEY='<your-real-Pro-key>' and re-run (runs changepk + reboots), or apply Pro in Settings>Activation, reboot, re-run." -ForegroundColor Red
-        Write-Host "(The generic VK7JG-... key only gives UNACTIVATED Pro and won't be licensed — don't rely on it.)" -ForegroundColor DarkYellow
-        exit 1
+        Write-Host "M365 Business Premium does NOT include Home->Pro upgrade rights — you need a PURCHASED Windows 11 Pro key." -ForegroundColor Red
+        Write-Host "Then: set `$env:AP_PROKEY='<your-real-Pro-key>' and re-run, or apply Pro in Settings>Activation, reboot, re-run." -ForegroundColor Red
+        Stop-Here "(The generic VK7JG-... key only gives UNACTIVATED Pro and won't be licensed — don't rely on it.)" 'DarkYellow'
+        return
     }
-    Write-Host "Edition OK: $edition" -ForegroundColor Green
+    Write-Host "Edition OK: $($os.Caption)" -ForegroundColor Green
 
-    # PSGallery prerequisites (a fresh OOBE has no package provider yet)
+    # --- connectivity pre-check (clearer than a downstream Graph error) ---
+    if (-not (Test-NetConnection graph.microsoft.com -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
+        Stop-Here "No HTTPS to graph.microsoft.com. Connect Wi-Fi/Ethernet at OOBE first, then re-run."
+        return
+    }
+
+    # --- PSGallery prereqs (a fresh OOBE has no provider yet). -Force bypasses the untrusted-repo prompt,
+    #     so we DON'T flip PSGallery to Trusted globally. ---
     $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction SilentlyContinue
-    if ((Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue).InstallationPolicy -ne 'Trusted') {
-        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-    }
     Install-Script -Name Get-WindowsAutopilotInfo -Force -Scope CurrentUser -ErrorAction Stop
-    $apScript = (Get-Command Get-WindowsAutopilotInfo.ps1 -ErrorAction Stop).Source
 
-    Write-Host "Uploading hardware hash + WAITING for profile assignment..." -ForegroundColor Yellow
+    # --- resolve the script path robustly (this session's PATH isn't refreshed after Install-Script) ---
+    $apScript = $null
+    try { $apScript = (Get-Command Get-WindowsAutopilotInfo.ps1 -ErrorAction Stop).Source } catch {}
+    if (-not $apScript) { try { $apScript = Join-Path (Get-InstalledScript Get-WindowsAutopilotInfo).InstalledLocation 'Get-WindowsAutopilotInfo.ps1' } catch {} }
+    if (-not $apScript -or -not (Test-Path $apScript)) { Stop-Here "Couldn't locate Get-WindowsAutopilotInfo.ps1 after install. Re-run, or check PSGallery access."; return }
+
+    Write-Host "`nUploading hardware hash + WAITING for profile assignment (can take ~10-15 min)..." -ForegroundColor Yellow
     Write-Host "Sign in at the prompt as an Intune Admin (Graph only — NOT a Windows sign-in)." -ForegroundColor Yellow
     & $apScript -Online -GroupTag $tag -Assign
 
     Write-Host "`nSUCCESS — registered to Autopilot (tag '$tag') and profile ASSIGNED." -ForegroundColor Green
     if ($env:AP_NOSHUTDOWN) {
-        Write-Host "AP_NOSHUTDOWN set — not powering off. Power off before shipping; do NOT sign into Windows (unless this is your own device — then reboot into the Autopilot OOBE and sign in as yourself)." -ForegroundColor Yellow
+        Stop-Here "AP_NOSHUTDOWN set — not powering off. Power off before shipping (don't sign into Windows); or for your OWN device, reboot into the Autopilot OOBE and sign in as yourself." 'Yellow'
     } else {
         Write-Host "Powering off in 20s so you can ship it. DO NOT sign into Windows." -ForegroundColor Green
         Start-Sleep -Seconds 20
@@ -88,7 +109,5 @@ try {
     }
 }
 catch {
-    Write-Host "`nFAILED: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "NOT powered off so you can retry. Check: network connected? signed in as an Intune Admin? group-tag profile assigned in Intune?" -ForegroundColor Red
-    exit 1
+    Stop-Here "FAILED: $($_.Exception.Message)`nNot powered off so you can retry. Check: network connected? signed in as an Intune Admin? group-tag profile assigned in Intune?"
 }
