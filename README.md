@@ -3,7 +3,9 @@
 A single PowerShell script you run at **OOBE** to register a Windows device to **your** Intune/Autopilot
 tenant as **Corporate**, wait for the deployment profile to assign, then power off ready to ship. The end
 user powers on and completes the Autopilot OOBE. Generic + tenant-agnostic (the tenant is whoever signs in
-at the Graph prompt) and **secret-free**, so it's safe to host publicly. By [setkernel](https://setkernel.net).
+at the Graph prompt) and **secret-free**, so it's safe to host publicly.
+
+<sub>A **SetKernel Digital Inc.** tool · [setkernel.net](https://setkernel.net)</sub>
 
 ## Use it
 At a clean OOBE → **Shift+F10** → `powershell` →

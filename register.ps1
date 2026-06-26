@@ -1,5 +1,5 @@
 <#
-register.ps1 — one-shot Windows Autopilot registration, brought to you by setkernel.
+register.ps1 — one-shot Windows Autopilot registration · SetKernel Digital Inc.
 Run at OOBE (Shift+F10) on a device you're provisioning: it registers the device CORPORATE to your
 Intune/Autopilot tenant, waits for the deployment profile to be assigned, then powers the device off
 so it's ready to ship. The end user then powers on and completes the Autopilot OOBE.
@@ -28,7 +28,23 @@ No secrets in this script — safe to host publicly.   https://github.com/setker
 $ErrorActionPreference = 'Stop'
 $tag = if ($env:AP_TAG) { $env:AP_TAG } else { 'corp' }
 
-Write-Host "== setkernel Autopilot registration ==  groupTag=$tag" -ForegroundColor Cyan
+function Show-Banner {
+    $logo = @'
+
+   ____   _  __
+  / ___| | |/ /
+  \___ \ | ' /
+   ___) || . \
+  |____/ |_|\_\
+'@
+    Write-Host $logo -ForegroundColor Cyan
+    Write-Host "  S E T K E R N E L  Digital Inc." -ForegroundColor White
+    Write-Host "  Windows Autopilot  *  zero-touch provisioning" -ForegroundColor DarkGray
+    Write-Host "  ------------------------------------------------" -ForegroundColor DarkCyan
+}
+
+Show-Banner
+Write-Host "  Registering this device to Autopilot  (group tag: $tag)`n" -ForegroundColor Cyan
 try {
     Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction SilentlyContinue
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
