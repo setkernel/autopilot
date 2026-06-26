@@ -1,0 +1,9 @@
+name = "autopilot-register"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Binds the Worker to the short path on your domain -> https://setkernel.net/ap
+# Requires the setkernel.net zone in this Cloudflare account.
+routes = [
+  { pattern = "setkernel.net/ap", zone_name = "setkernel.net" }
+]
