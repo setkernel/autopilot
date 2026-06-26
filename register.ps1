@@ -31,16 +31,16 @@ $tag = if ($env:AP_TAG) { $env:AP_TAG } else { 'corp' }
 function Show-Banner {
     $logo = @'
 
-   ____   _  __
-  / ___| | |/ /
-  \___ \ | ' /
-   ___) || . \
-  |____/ |_|\_\
+   ____   _____  _____  _  __ ____   _   _  _
+  / ___| | ____||_   _|| |/ /|  _ \ | \ | || |
+  \___ \ |  _|    | |  | ' / | |_) ||  \| || |
+   ___) || |___   | |  | . \ |  _ < | |\  || |___
+  |____/ |_____|  |_|  |_|\_\|_| \_\|_| \_||_____|
 '@
     Write-Host $logo -ForegroundColor Cyan
-    Write-Host "  S E T K E R N E L  Digital Inc." -ForegroundColor White
+    Write-Host "  SetKernel Digital Inc." -ForegroundColor White
     Write-Host "  Windows Autopilot  *  zero-touch provisioning" -ForegroundColor DarkGray
-    Write-Host "  ------------------------------------------------" -ForegroundColor DarkCyan
+    Write-Host "  -------------------------------------------------" -ForegroundColor DarkCyan
 }
 
 Show-Banner
