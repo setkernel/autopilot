@@ -14,6 +14,8 @@ Shield 1.0.0 (source-available, `LICENSE.md`).
 - Done means `./scripts/check.sh` passes, plus a real OOBE run on a test device for any
   behaviour change; say so when that run has not happened.
 - End a run with three headings: **Blocked on owner**, **Changed**, **Found**.
+- Long or multi-step work: keep a checklist in `TASKS.md` (gitignored) so progress survives
+  context compaction; tick items as they finish.
 
 ## Commands
 
@@ -45,3 +47,12 @@ Keep the repository name and public visibility: the redirect depends on both.
 - GitHub Actions run on GitHub-hosted runners (`ubuntu-latest`) only: this repository is public, so never
   point a workflow at a self-hosted runner. Actions are pinned to a full commit SHA with the version in a
   comment, and Dependabot keeps them current.
+
+## Agent tooling (.claude/)
+- Subagents: `explorer` (Sonnet, read-only search and log reading) and `reviewer` (Opus, high
+  effort, merge blockers only). Delegate lookups to `explorer`; keep code edits in the main session.
+- Skills: `verify` (run the checks as CI does), `review-blockers`, `ship-pr` (verify → review →
+  branch → PR). Use `ship-pr` to finish a change.
+- Effort: medium for well-scoped work, high for bugs in old code and for review; low for
+  mechanical edits. A check (test, build) beats raising effort.
+- Cloud sessions run `.claude/cloud-setup.sh` on start (only when `CLAUDE_CODE_REMOTE` is set).

@@ -10,5 +10,17 @@
       "Read(./.env.*)",
       "Read(./.dev.vars)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -n \"$CLAUDE_CODE_REMOTE\" ] && [ -x .claude/cloud-setup.sh ]; then .claude/cloud-setup.sh; fi; exit 0"
+          }
+        ]
+      }
+    ]
   }
 }
