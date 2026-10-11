@@ -35,22 +35,21 @@ jobs:
               const pusher = (context.payload.pusher?.name || context.actor || '').toLowerCase();
               if (pusher !== approver) problem = `Direct push to \`${context.ref_name ?? 'main'}\` by **${pusher}** with no pull request.`;
             } else {
-              const pr = prs[0]; link = pr.html_url;
+              // the commit->PR list omits merged_by; fetch the full PR
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: prs[0].number })).data;
+              link = pr.html_url;
               const mergedBy = (pr.merged_by?.login || '').toLowerCase();
               const reviews = (await github.rest.pulls.listReviews({ owner, repo, pull_number: pr.number })).data;
               const approved = reviews.some(r => r.state === 'APPROVED' && r.user?.login?.toLowerCase() === approver);
               if (mergedBy !== approver && !approved) problem = `PR #${pr.number} was merged by **${mergedBy || 'unknown'}** without ${approver}'s approval.`;
             }
             if (!problem) { core.info('ok: merged or approved by ' + approver); return; }
-            await github.rest.issues.create({
-              owner, repo,
-              title: `Unapproved change on the default branch (${sha.slice(0, 7)})`,
-              body: `${problem}\n\n${link}\n\nPer setkernel rules every change to the default branch needs ${approver}'s merge or approval. Review it, then close this issue with what you decided (keep, or revert).`,
-              labels: ['unapproved-merge'],
-              assignees: [process.env.APPROVER],
-            }).catch(async e => {
-              // label may not exist yet
-              await github.rest.issues.create({ owner, repo, title: `Unapproved change on the default branch (${sha.slice(0, 7)})`,
-                body: `${problem}\n\n${link}`, assignees: [process.env.APPROVER] });
-            });
+            const title = `Unapproved change on the default branch (${sha.slice(0, 7)})`;
+            const body = `${problem}\n\n${link}\n\nPer setkernel rules every change to the default branch needs ${approver}'s merge or approval. Review it, then close this issue with what you decided (keep, or revert).`;
+            if (!context.payload.repository.has_issues) { core.setFailed(`${problem} ${link} (Issues are disabled in this repo, so this failed run is the alert.)`); return; }
+            try {
+              await github.rest.issues.create({ owner, repo, title, body, labels: ['unapproved-merge'], assignees: [process.env.APPROVER] });
+            } catch (e) {
+              await github.rest.issues.create({ owner, repo, title, body, assignees: [process.env.APPROVER] });  // label missing
+            }
             core.warning(problem);
