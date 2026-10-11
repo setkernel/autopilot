@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parse:
+    name: PowerShell parse check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # pwsh is preinstalled on ubuntu-latest. Parse every .ps1; any syntax error fails the job.
+      - name: Parse all PowerShell scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          $files = Get-ChildItem -Path . -Filter *.ps1 -Recurse -File | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }
+          foreach ($f in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $failed = $true
+              foreach ($e in $errors) { Write-Host "::error file=$($f.FullName)::$($e.Message) (line $($e.Extent.StartLineNumber))" }
+            } else {
+              Write-Host "OK: $($f.FullName)"
+            }
+          }
+          if (-not $files) { Write-Host '::error::no .ps1 files found'; $failed = $true }
+          if ($failed) { exit 1 }
