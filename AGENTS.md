@@ -33,8 +33,7 @@ README "Hardening before fleet rollout" lists the pinning work, none of which is
 ## Layout
 - `register.ps1`: the whole product.
 - `scripts/check.sh`: offline parse and lint check.
-- `.github/workflows/`: `ci.yml` (parse check), `merge-audit.yml` (flags changes to `main`
-  without Raghav's merge or approval).
+- `.github/workflows/ci.yml`: parse check.
 
 ## Traps and don't-touch
 - Keep the repository name and public visibility: the redirect URL depends on both.
