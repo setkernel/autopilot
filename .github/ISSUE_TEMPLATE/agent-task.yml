@@ -22,7 +22,10 @@ body:
     id: acceptance
     attributes:
       label: Acceptance criteria
-      description: Checklist the reviewer will verify.
+      description: >-
+        Checklist the reviewer will verify. Needs a credential or an Infisical project? Follow
+        setkernel/hq docs/repo-standard.md, section "Credentials for a repo"; do not ask Raghav to
+        create tokens in a dashboard.
       value: |
         - [ ]
     validations:
