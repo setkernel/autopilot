@@ -47,4 +47,4 @@ README "Hardening before fleet rollout" lists the pinning work, none of which is
   the child `-Command` string).
 - The repo is public: workflows run on GitHub-hosted runners (`ubuntu-latest`) only, never a
   self-hosted runner. Actions are pinned to a full commit SHA with the version in a comment;
-  Dependabot keeps them current.
+  there is no Dependabot, so bump them by hand.
