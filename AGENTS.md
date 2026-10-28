@@ -2,8 +2,8 @@
 
 What anyone, person or coding agent, needs to know to work in **this** repository.
 `CLAUDE.md` only points here. Org-wide rules (tracking work on the board, when to stop and ask,
-secrets, branches and commits, the end-of-run report) come from setkernel's central agent setup
-(https://github.com/setkernel/hq/blob/main/docs/repo-standard.md); don't repeat them here.
+secrets, branches and commits, the end-of-run report) come from setkernel's central agent setup;
+don't repeat them here.
 
 ## What this repo is
 `register.ps1` registers a Windows device to the signed-in admin's Intune/Autopilot tenant at
@@ -25,8 +25,7 @@ the PR should say whether that run happened.
 ## Deploy
 No deploy workflow. `https://setkernel.net/ap` is a Cloudflare redirect rule (302) to
 `raw.githubusercontent.com/setkernel/autopilot/main/register.ps1`, managed in
-[setkernel-cloudflare](https://github.com/setkernel/setkernel-cloudflare)
-(`stacks/edge/rulesets.tf`, `setkernel_net_redirects`). So a merge to `main` reaches devices
+setkernel's infrastructure code (not in this repo). So a merge to `main` reaches devices
 within minutes. Pinning the served revision is a change to that redirect, not only to this repo;
 README "Hardening before fleet rollout" lists the pinning work, none of which is done yet.
 
